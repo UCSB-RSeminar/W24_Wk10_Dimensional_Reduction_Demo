@@ -1,0 +1,207 @@
+---
+title: "Dimension Reduction Winter 2024"
+author: "Charlie Braman"
+date: "2024-03-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Dimension reduction is incredibly helpful for working with complex data to investigate underlying patterns and associations. The basic idea is taking multi-dimensional data where each variable has its own axis, and flattening that data into the best 2-dimensional representation. This is often used when you are investigating communities of organisms and/or a large amount of environmental drivers
+
+A common method of community reduction analysis is an NMDS plot, which stands for nonmetric multidimensional scaling. First lets load our data frame. This is data collected by Charlie Braman and Adam Lambert investigating the ant community, and associations with plants and soil conditions, throughout microhabitats at restoration sites along the Santa Clara River. For these types of analyses, the data needs to be in a wide format. You want each row to be a survey/sample location. Each column will be either a species count or an environmental variable.
+```{r}
+###reading in the data frame
+ant_full<-read.csv("Riparian Community Final.csv")
+
+```
+
+Notice in this data frame the first 5 columns are location/season factors. The next 18 columns are incidence counts of unique ant species at each survey location. We can split the ant community out into its own data frame. The remaining 60ish variables are total coverage in centimeters of various plants
+```{r}
+###seperating the ant community from the other data for future analyses
+Ant_community<-ant_full[,6:23]
+```
+
+For many community ecology analyses, the go-to package is the vegan package. The pdf for this package is incredibly helpful in learning more about the huge amount of analyses you can run with it, as well as some of the statistical theory underlying the functions. Another excellent resource is the Guide to Statistical Microbial Ecology (Gusta Me!) website https://sites.google.com/site/mb3gustame/home?authuser=0
+```{r}
+###loading the vegan package
+library(vegan)
+```
+There's two main strategies for an NMDS. One is performing a Permutational Anova on the communities to see if they are statistically different, then making an NMDS if they are. The other is plot an NMDS graph to see if the communities look different, then confirm with a PERMANOVA if they do. I prefer the second approach. We will be using the metaMDS function from the vegan package to make the plot. The coding is pretty straightforward, however it's important to understand the terms. The first portion (Ant_community in our example), is the community matrix being used for the comparison. The next term, k, is the number of axis that will be used for the ordination. This is best set to 2, so that the ordination is two-dimensional (i.e. has two axes), but if the stress value is too high it can be relaxed to 3. More on this later. The ordination is formed by calculating the dissimilarity between each set of observations. The most common method for this is Bray-Curtis dissimilarity (often referred to as Bray-Curtis distance). We are using this method by setting the distance to "bray". However the metaMDS function has many other ones that can be used which you can check out by looking at the metaMDS help page. 
+```{r}
+ 
+###running the ordination, assigning it to a vector so it can be called back later
+ant.nmds <- metaMDS(Ant_community, k=2, model = "global", distance = "bray")
+```
+
+
+It's important to note that the ordination starts from a random point, then iteratively shifts the ordinations to see if one has lower stress values. The default number of trys will be 20, but the function will stop before 20 if it stops reducing the stress value. In general, the lower the stress value, the more accurately the plot is representing the true relationship of the points to each other in ordination space. The number of trys can be increased with the try command, and a maximum number of trys can be set with the trymax command. Because the process is iterative, but random, to ensure you keep a reproduceable example, you want to set a seed beforehand. I like to sample a random value, then set that as the seed, to keep a component of randomness. You also usually want to try a few different seeds, to ensure that your nmds didnt get stuck in a localized minimum.
+```{r}
+###sampling a random number to set the seed
+sample(1:999, 1)
+###257 was the number I sampled
+set.seed(257)
+###adding in higher minimum and maximum try values, if the best solution is repeated, it will stop before the maximum number of trys set
+ant.nmds <- metaMDS(Ant_community, k=2, model = "global", distance = "bray", try=30, trymax = 50)
+```
+To ensure a valid publishable result, we want the stress value to be less than .2. the stress can be checked from the nmds object
+```{r}
+ant.nmds$stress
+###stress is 0.0919, a great result!
+
+```
+We can also check the stress with a stress plot or Shepard plot, which looks at the amount of scatter to make sure the ordination is retaining the community dissimilarity. If someone works a lot with ordinations they may also want to see this with the nmds plot
+
+
+```{r}
+stressplot(ant.nmds)
+```
+
+One final point, the metaMDS function default autotransforms data to minimize the impact of rare and/or highly abundant outliers. If you want to turn this off (for non-community data) or specify the type of transformation, add in the autotransform command
+```{r}
+###eg ant.nmds <- metaMDS(Ant_community, k=2, model = "global", distance = "bray", try=30, trymax = 50, autotransform = FALSE)
+```
+
+To graph the ordination, you can plot the nmds directly with base plot. If you want to use ggplot, you can do that as well, but you need to make a new data fram that pulls the scores out of the nmds object, since Hadley wants every graph to come from long data. I prefer to graph these in base plot. You can then use some additional functions from vegan (orditorp and ordiellipse) to plot the ordination. Orditorp shows the species centroids in ordination spaces. Ordiellipse draws polygons around the centroid of each factor group in ordination space. In this example, the groups are the riparian microhabitats.
+```{r}
+###making sure the habitats and seasons are recognized as factors
+ant_full$Habitat.Type<-as.factor(ant_full$Habitat.Type)
+summary(ant_full$Habitat.Type)
+ant_full$Season<-as.factor(ant_full$Season)
+
+###making a vector for the point shapes I want to use
+pchvec<-c(15,17)
+
+### a nice trick for getting color Hexcode values from the RColorBrewer package
+library(RColorBrewer)
+
+###brewer.pal will tell you the color values from any of the set palettes, with the number of colors that you designate
+brewer.pal(6, "Set1")
+###making an object of the 6 colors for the 6 habitat types
+colvec<-c("#E41A1C","#FFFF33", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00")
+
+###run all of this code together, the rmd code won't let it run line by line. In a script file you can iterively build the figure one line at a time to see what each line does
+plot(ant.nmds)
+orditorp(ant.nmds, display = 'species') ### display shows each species (the column headers) in ordination space
+with(ant_full,
+     points(ant.nmds, cex=1.0,
+            col = colvec[Habitat.Type],
+            pch = pchvec[Season]))
+mtext(text = "Stress = 0.092", side = 3, line = -1.5, adj = 0.95, 
+      cex = 1.0)
+legend("bottomright", c("Arundo", "F. Agriculture", "R. Channel", "R. Forest", "R. Scrub", "Revegetated"), title = "Microhabitat", 
+       col= c("#E41A1C","#FFFF33", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00"), pch=15, cex=0.8)
+###legend("bottomleft", c("Summer", "Winter"), title = "Season", pch=c(15,17))
+ordiellipse(ant.nmds, groups = ant_full$Habitat.Type, draw = "polygon", 
+            label = F, lty = 1, col = colvec)
+orditorp(ant.nmds, display = 'species')
+ordiellipse(ant.nmds, groups = Ant_community$cluster, draw = "polygon")
+```
+
+Our ordination shows we have three very distinct, non-overlapping communities, a Riparian Scrub community in Purple, a grouped River Channel/Former Ag. community in blue and yellow, and a Riparian Forest/Restoration/Arundo community in Green, Orange, and Red. To confirm this statistically, we can run a PERMANOVA on the communities by habitat type. To do this, vegan can also use the distance function to calculate the Bray-Curtis dissimilarity that was used in the ordination, then the adonis2 function to run the PERMANOVA
+```{r}
+ant.dist<- vegdist(Ant_community, method = "bray")
+set.seed(257) ###set a seed to make a reproduceable result as the PERMANOVA is permutational
+PERMANOVA<-adonis2(ant.dist~ Habitat.Type, data=ant_full,
+                  permutations = 1000)
+PERMANOVA ### communities significantly differ by habitat type (p<0.001)
+```
+If I want to then see what plants contribute to the differentiation in these ant communities, we can use the envfit function in vegan
+```{r}
+###making a data frame with the plant/environmental data
+Total.enviro<-cbind(ant_full[,3:5], ant_full[,25:81])
+ef<-envfit(ant.nmds, Total.enviro, permu=999, na.rm= TRUE ) ###lots of scary warnings in this now after updates due to many zeros in the plant data when plants were absent from a transect. One of the values of this technique is it's robust against zeros, but if this is an issue you can add a 1 to every cell
+
+###best to run this as a seperate script so you can zoom in on the figure, note we can start to see how certain things drive the differentiation. The direction of the vector arrow indicates positive association, so increasing Soil moisture and Arundo contribute to the Arundo cluster. Salix lasiolepis contributes to the Riparian Forest cluster. Exposed soil is a contributing factor to the Riparian Scrub cluster, etc. 
+plot(ant.nmds)
+ordiellipse(ant.nmds, groups = ant_full$Habitat.Type, draw = "polygon", 
+            label = TRUE, lty = 1)
+###the p.max tells it to only plot significant environmental data contributing to commnunity differentiation
+plot(ef, p.max = 0.05)
+
+```
+
+Another very common analysis is Principle Component Analysis (PCA). If you have many explanatory variables, especially ones that likely interact, you may want to decompose them into a few sets of the most strong drivers of variation in your observations. This is great for environmental data, but has other uses as well. In this example, we are analyzing a survey that looked at student responses to how well their writing classes prepared them for research writing.
+```{r}
+###loading the data and a little data wrangling
+library(dplyr)
+survey<-read.csv("R_dataset_NAs_woText.csv")
+survey$Department<-factor(survey$Department)
+survey$FYC<-factor(survey$FYC)
+survey$Gen<-factor(survey$Gen)
+survey$Intr<-factor(survey$Intr)
+survey$L1<-factor(survey$L1)
+survey$Gender.<-factor(survey$Gender.)
+survey$Race<-factor(survey$Race)
+
+survey_pca_data<-survey[,8:56]%>%
+  na.omit()
+```
+
+One cool way to explore your data is to look at correlations between values with a correlation plot using the corrplot package
+```{r}
+library(corrplot)
+c1<-cor(survey_pca_data)
+corrplot(c1)
+```
+In the plot, each survey question is on the x and y axis. Positively correlated answers have a blue dot, negatively correlated answers have a red dot, and no relationship answers are white. This tells us we have data with relationships worth exploring, so on to the PCA!
+
+```{r}
+###prcomp is coming from R's base stats package and will calculate PCA relationships
+survey_pca<- prcomp(survey_pca_data, scale = TRUE,center = TRUE)
+
+```
+
+To visualize the PCA, the factoextra package has great functions that are basically ggplot wrappers. fviz_eig creates a screeplot that shows how much variation in the data is captured by is principle component. In our example 10 components/dimensions were found, but the first two combine for 18.2+13.1=31.3% of the explained variation
+```{r}
+library(factoextra)
+
+fviz_eig(survey_pca, addlabels = TRUE, ylim = c(0, 50))
+
+```
+We can investigate which variable(s) contribute to an axis using the fviz_cos2 function (technically calculating cosign squares). In our example, survey responses to questions W, P, and T are the three largest contributors. If this was looking at the ant data, this might be variables like exposed soil, soil moisture and arundo cover.
+```{r}
+fviz_cos2(survey_pca, choice = "var", axes = 1)
+
+```
+To plot the PCA, we can use the fviz_pca_var function. We now see how each question response contributes to the first two dimensions, which are often referred to as Principle Components 1 and 2. 
+```{r}
+fviz_pca_var(survey_pca,
+             col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE     # Avoid text overlapping
+)
+```
+You may want to cluster your data into groups responding similarly to your explanatory variables. kmeans clustering is a common way to do this, and we can determine a usueful number of clusters with the fviz_nbclust function. In this example, 5 or 10 clusters would both be appropriate. Usually this will more clearly level off with less complicated data
+```{r}
+fviz_nbclust(survey_pca_data, kmeans, method = "wss")
+
+```
+Now I'm splitting the survey data into the 5 clusters using kmeans clustering. We can then visualize the 5 clusters in relation to our two principle components with the fviz_cluster function. The further a cluster is along an axis, the more strongly the group is associated with/impacted by variable associated with that axis (Principle component). In our example, cluster 1 in red is strongly driven by variables in Dimension/Principle Component 2 (the Y axis) but not very strongly impacted by Principle Component Dimension 1 (the X axis).
+```{r}
+set.seed(14)
+km.res_5 <- kmeans(survey_pca_data, 5, nstart = 25)
+
+aggregate(survey_pca_data, by=list(cluster=km.res_5$cluster), mean)
+survey_k5 <- cbind(survey_pca_data, cluster5 = km.res_5$cluster)
+fviz_cluster(km.res_5, survey_pca_data, ellipse.type = 'confidence')
+
+```
+a Factor analysis of Mixed Data (FAMD) analysis functions on the same idea as a PCA, but can also include qualitative factor data in addition to quantitative numeric data. A little more wrangling of the survey data allows us to use FactoMineR's FAMD function. We can then see how humanities, social sciences, and Stem students (each student is a numbered point, which could be a sample location with ecology data) evaluate their writing instruction in the survey.
+```{r}
+survey_redu1<- subset(survey[,c(-15, -37)]) 
+survey_redu1<- na.omit(survey_redu1)
+
+library(FactoMineR)
+
+topsurvey_pca<-FAMD(survey_redu1[,1:46], ncp = 5, sup.var = NULL, ind.sup = NULL, graph = TRUE)
+fviz_mfa_ind(topsurvey_pca, 
+             habillage = "Gender.", # color by groups 
+             palette = c("#00AFBB", "#E7B800", "#FC4E07"),
+             addEllipses = TRUE, ellipse.type = "confidence", 
+             repel = TRUE # Avoid text overlapping
+)
+```
+
+I hope this helps on your multivariant data adventures. Feel free to email me with any questions! charliebraman@ucsb.edu
