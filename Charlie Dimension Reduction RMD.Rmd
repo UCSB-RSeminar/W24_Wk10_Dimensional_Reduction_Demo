@@ -9,11 +9,25 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 Dimension reduction is incredibly helpful for working with complex data to investigate underlying patterns and associations. The basic idea is taking multi-dimensional data where each variable has its own axis, and flattening that data into the best 2-dimensional representation. This is often used when you are investigating communities of organisms and/or a large amount of environmental drivers
+```{r load packages}
+# install.packages(c("vegan","RColorBrewer","dplyr","corrplot","factoextra","FactoMineR","here"))
+library(RColorBrewer)
+library(dplyr)
+library(corrplot)
+library(factoextra)
+library(FactoMineR)
+library(here)
+```
 
-A common method of community reduction analysis is an NMDS plot, which stands for nonmetric multidimensional scaling. First lets load our data frame. This is data collected by Charlie Braman and Adam Lambert investigating the ant community, and associations with plants and soil conditions, throughout microhabitats at restoration sites along the Santa Clara River. For these types of analyses, the data needs to be in a wide format. You want each row to be a survey/sample location. Each column will be either a species count or an environmental variable.
+
+A common method of community reduction analysis is an NMDS plot, which stands for nonmetric multidimensional scaling. First lets load our data frame. This is data collected by Charlie Braman and Adam Lambert investigating the ant community, and associations with plants and soil conditions, throughout microhabitats at restoration sites along the Santa Clara River. For these types of analyses, the data needs to be in a wide format. You want each row to be a survey/sample location. Each column will be either a species count or an environmental variable.  
+*Note*: NMDS is NOT a statistical tool for testing for multivariate differences between groups/as a function of a predictor. It is ONLY a data visualization technique that takes n-dimensional space and smashes it down into 2 dimensions, preserving as much of the information from the n-dimensional space as possible, so that we humans can wrap our minds around it.  
+To test for statistical significance, you want a permutational MANOVA (multivariate analysis of variance) or PERMANOVA. However, this test doesn't give you anything to sink your teeth in, and seeing is believing. Moreover, it is sensitive to group differences in both location AND spread. So if you have two groups that PERMANOVA says are statistically different, it could be that there's more variation in one group than the other, but they're perfectly nested. OR it could be that they have different species in them. So visualizing the data with an NMDS is useful to keep you from misinterpreting your PERMANOVA result.
+
+
 ```{r}
 ###reading in the data frame
-ant_full<-read.csv("Riparian Community Final.csv")
+ant_full<-read.csv(here("data","Riparian_Community_Final.csv"))
 
 ```
 
@@ -28,10 +42,13 @@ For many community ecology analyses, the go-to package is the vegan package. The
 ###loading the vegan package
 library(vegan)
 ```
-There's two main strategies for an NMDS. One is performing a Permutational Anova on the communities to see if they are statistically different, then making an NMDS if they are. The other is plot an NMDS graph to see if the communities look different, then confirm with a PERMANOVA if they do. I prefer the second approach. We will be using the metaMDS function from the vegan package to make the plot. The coding is pretty straightforward, however it's important to understand the terms. The first portion (Ant_community in our example), is the community matrix being used for the comparison. The next term, k, is the number of axis that will be used for the ordination. This is best set to 2, so that the ordination is two-dimensional (i.e. has two axes), but if the stress value is too high it can be relaxed to 3. More on this later. The ordination is formed by calculating the dissimilarity between each set of observations. The most common method for this is Bray-Curtis dissimilarity (often referred to as Bray-Curtis distance). We are using this method by setting the distance to "bray". However the metaMDS function has many other ones that can be used which you can check out by looking at the metaMDS help page. 
+There's two main strategies for an NMDS. One is performing a Permutational Anova on the communities to see if they are statistically different, then making an NMDS if they are. The other is plot an NMDS graph to see if the communities look different, then confirm with a PERMANOVA if they do. I prefer the second approach. We will be using the metaMDS function from the vegan package to make the plot. 
+
+The coding is pretty straightforward, however it's important to understand the terms. The first portion (Ant_community in our example), is the community matrix being used for the comparison. The next term, k, is the number of axis that will be used for the ordination. This is best set to 2, so that the ordination is two-dimensional (i.e. has two axes), but if the stress value is too high it can be relaxed to 3. More on this later. The ordination is formed by calculating the dissimilarity between each set of observations. The most common method for this is Bray-Curtis dissimilarity (often referred to as Bray-Curtis distance). We are using this method by setting the distance to "bray". However the metaMDS function has many other ones that can be used which you can check out by looking at the metaMDS help page. 
 ```{r}
  
 ###running the ordination, assigning it to a vector so it can be called back later
+
 ant.nmds <- metaMDS(Ant_community, k=2, model = "global", distance = "bray")
 ```
 
@@ -45,6 +62,9 @@ set.seed(257)
 ###adding in higher minimum and maximum try values, if the best solution is repeated, it will stop before the maximum number of trys set
 ant.nmds <- metaMDS(Ant_community, k=2, model = "global", distance = "bray", try=30, trymax = 50)
 ```
+
+**NMDS Stress**
+the 'stress' of an NMDS ordination is a metric of how well your 2d space captures all of the pairwise dissimilarity distances of your full n-dimensional space. Too high of stress, and youre NMDS is just visualizing junk.
 To ensure a valid publishable result, we want the stress value to be less than .2. the stress can be checked from the nmds object
 ```{r}
 ant.nmds$stress
@@ -63,7 +83,7 @@ One final point, the metaMDS function default autotransforms data to minimize th
 ###eg ant.nmds <- metaMDS(Ant_community, k=2, model = "global", distance = "bray", try=30, trymax = 50, autotransform = FALSE)
 ```
 
-To graph the ordination, you can plot the nmds directly with base plot. If you want to use ggplot, you can do that as well, but you need to make a new data fram that pulls the scores out of the nmds object, since Hadley wants every graph to come from long data. I prefer to graph these in base plot. You can then use some additional functions from vegan (orditorp and ordiellipse) to plot the ordination. Orditorp shows the species centroids in ordination spaces. Ordiellipse draws polygons around the centroid of each factor group in ordination space. In this example, the groups are the riparian microhabitats.
+To graph the ordination, you can plot the nmds directly with base plot. If you want to use ggplot, you can do that as well, but you need to make a new data frame that pulls the scores out of the nmds object, since Hadley wants every graph to come from long data. I prefer to graph these in base plot. You can then use some additional functions from vegan (orditorp and ordiellipse) to plot the ordination. Orditorp shows the species centroids in ordination spaces. Ordiellipse draws polygons around the centroid of each factor group in ordination space. In this example, the groups are the riparian microhabitats.
 ```{r}
 ###making sure the habitats and seasons are recognized as factors
 ant_full$Habitat.Type<-as.factor(ant_full$Habitat.Type)
@@ -126,7 +146,7 @@ Another very common analysis is Principle Component Analysis (PCA). If you have 
 ```{r}
 ###loading the data and a little data wrangling
 library(dplyr)
-survey<-read.csv("R_dataset_NAs_woText.csv")
+survey<-read.csv(here("data","R_dataset_NAs_woText.csv"))
 survey$Department<-factor(survey$Department)
 survey$FYC<-factor(survey$FYC)
 survey$Gen<-factor(survey$Gen)
